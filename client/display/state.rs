@@ -1,8 +1,10 @@
 use std::string::ToString;
 
+use anyhow::{Context, Result};
 use chrono::{Duration, Local};
 use comfy_table::presets::UTF8_HORIZONTAL_ONLY;
 use comfy_table::*;
+use pest::Parser;
 
 use pueue_lib::settings::Settings;
 use pueue_lib::state::{State, PUEUE_DEFAULT_GROUP};
@@ -10,6 +12,7 @@ use pueue_lib::task::{Task, TaskResult, TaskStatus};
 
 use super::{helper::*, OutputStyle};
 use crate::cli::SubCommand;
+use crate::query::*;
 
 /// Print the current state of the daemon in a nicely formatted table.
 /// We pass the tasks as a separate parameter and as a list.
@@ -20,25 +23,34 @@ pub fn print_state(
     cli_command: &SubCommand,
     style: &OutputStyle,
     settings: &Settings,
-) {
-    let (json, group_only) = match cli_command {
-        SubCommand::Status { json, group } => (*json, group.clone()),
-        SubCommand::FormatStatus { group } => (false, group.clone()),
+) -> Result<()> {
+    let (json, group_only, query) = match cli_command {
+        SubCommand::Status { json, group, query } => (*json, group.clone(), Some(query)),
+        SubCommand::FormatStatus { group } => (false, group.clone(), None),
         _ => panic!("Got wrong Subcommand {cli_command:?} in print_state. This shouldn't happen!"),
     };
+
+    if let Some(query) = query {
+        let full_query = query.join(" ");
+        let parsed =
+            QueryParser::parse(Rule::query, &full_query).context("Failed to parse query")?;
+        dbg!(parsed);
+    }
 
     // If the json flag is specified, print the state as json and exit.
     if json {
         println!("{}", serde_json::to_string(&state).unwrap());
-        return;
+        return Ok(());
     }
 
     if let Some(group) = group_only {
         print_single_group(state, tasks, settings, style, group);
-        return;
+        return Ok(());
     }
 
     print_all_groups(state, tasks, settings, style);
+
+    Ok(())
 }
 
 fn print_single_group(

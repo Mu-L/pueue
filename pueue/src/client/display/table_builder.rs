@@ -1,4 +1,4 @@
-use chrono::Duration;
+use chrono::TimeDelta;
 use comfy_table::presets::UTF8_HORIZONTAL_ONLY;
 use comfy_table::{Cell, ContentArrangement, Row, Table};
 use crossterm::style::Color;
@@ -208,9 +208,11 @@ impl<'a> TableBuilder<'a> {
                 // Determine the human readable task status representation and the respective color.
                 let status_string = task.status.to_string();
                 let (status_text, color) = match &task.status {
-                    TaskStatus::Running => (status_string, Color::Green),
-                    TaskStatus::Paused | TaskStatus::Locked => (status_string, Color::White),
-                    TaskStatus::Done(result) => match result {
+                    TaskStatus::Running { .. } => (status_string, Color::Green),
+                    TaskStatus::Paused { .. } | TaskStatus::Locked { .. } => {
+                        (status_string, Color::White)
+                    }
+                    TaskStatus::Done { result, .. } => match result {
                         TaskResult::Success => (TaskResult::Success.to_string(), Color::Green),
                         TaskResult::DependencyFailed => {
                             ("Dependency failed".to_string(), Color::Red)
@@ -234,7 +236,8 @@ impl<'a> TableBuilder<'a> {
                 } = task.status
                 {
                     // Only show the date if the task is not supposed to be enqueued today.
-                    let enqueue_today = enqueue_at <= start_of_today() + Duration::days(1);
+                    let enqueue_today =
+                        enqueue_at <= start_of_today() + TimeDelta::try_days(1).unwrap();
                     let formatted_enqueue_at = if enqueue_today {
                         enqueue_at.format(&self.settings.client.status_time_format)
                     } else {

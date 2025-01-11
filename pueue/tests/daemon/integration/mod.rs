@@ -1,5 +1,6 @@
 mod add;
 mod aliases;
+mod callback;
 mod clean;
 mod edit;
 mod environment_variables;
@@ -16,6 +17,8 @@ mod restart;
 mod restore;
 /// Tests for shutting down the daemon.
 mod shutdown;
+mod socket_permissions;
+mod spawn;
 mod start;
 mod stashed;
 /// Test that the worker pool environment variables are properly injected.

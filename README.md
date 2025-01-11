@@ -29,42 +29,41 @@ All features that were planned have been added and only minor improvements, bug-
 ## Features
 
 - Scheduling
-    * Add tasks as you go.
-    * Run multiple tasks at once. You decide how many tasks should run concurrently.
-    * Change the order of the scheduled tasks.
-    * Specify dependencies between tasks.
-    * Schedule tasks to run at a specific time.
+  - Add tasks as you go.
+  - Run multiple tasks at once. You decide how many tasks should run concurrently.
+  - Change the order of the scheduled tasks.
+  - Specify dependencies between tasks.
+  - Schedule tasks to run at a specific time.
 - Process interaction
-    * Easy output inspection.
-    * Send input to running processes.
-    * Pause/resume tasks, when you need some processing power right NOW!
+  - Easy output inspection.
+  - Send input to running processes.
+  - Pause/resume tasks, when you need some processing power right NOW!
 - Task groups (multiple queues)
-    * Each group can have several tasks running in parallel.
-    * Pause/start tasks by a group.
+  - Each group can have several tasks running in parallel.
+  - Pause/start tasks by a group.
 - Background process execution
-    * The `pueued` daemon runs in the background. No need to be logged in.
-    * Commands are executed in their respective working directories.
-    * The current environment variables are copied when adding a task.
-    * Commands are run in a shell which allows the full feature set of shell coding.
+  - The `pueued` daemon runs in the background. No need to be logged in.
+  - Commands are executed in their respective working directories.
+  - The current environment variables are copied when adding a task.
+  - Commands are run in a shell which allows the full feature set of shell coding.
 - Consistency
-    * The queue is always saved to disk and restored on kill/system crash.
-    * Logs are persisted onto the disk and survive a crash.
+  - The queue is always saved to disk and restored on kill/system crash.
+  - Logs are persisted onto the disk and survive a crash.
 - Miscellaneous
-    * A callback hook to, for instance, set up desktop notifications.
-    * JSON output for `log` and `status` if you want to display info about tasks in another program.
-    * A `wait` subcommand to wait for specific tasks, a group (or everything) to finish.
+  - A callback hook to, for instance, set up desktop notifications.
+  - JSON output for `log` and `status` if you want to display info about tasks in another program.
+  - A `wait` subcommand to wait for specific tasks, a group (or everything) to finish.
 - A lot more. Check the -h options for each subcommand for detailed options.
 - Cross Platform
-    * Linux is fully supported and battle-tested.
-    * MacOS is fully supported and on par with Linux.
-    * Windows is fully supported and working fine for quite a while.
+  - Linux is fully supported and battle-tested.
+  - MacOS is fully supported and on par with Linux.
+  - Windows is fully supported and working fine for quite a while.
 - [Why should I use it](https://github.com/Nukesor/pueue/wiki/FAQ#why-should-i-use-it)
 - [Advantages over Using a Terminal Multiplexer](https://github.com/Nukesor/pueue/wiki/FAQ#advantages-over-using-a-terminal-multiplexer)
 
-
 ## What Pueue is **not**
 
-Pueue is **not** designed to be a programmable (scriptable) task scheduler/executor.
+Pueue is **not** designed to be a heavy-duty programmable (scriptable) task scheduler/executor.
 
 The focus of `pueue` lies on human interaction, i.e. it's supposed to be used by a real person on some kind of OS.
 See [the Design Goals section](#design-goals)
@@ -80,7 +79,7 @@ There are a few different ways to install Pueue.
 
 #### Package Manager
 
-<a href="https://repology.org/project/pueue/versions"><img align="right" src="https://repology.org/badge/vertical-allrepos/pueue.svg" alt="Packaging status"></a>
+<a href="https://repology.org/project/pueue/versions"><img align="right" src="https://repology.org/badge/vertical-allrepos/pueue.svg?exclude_unsupported=1" alt="Packaging status"></a>
 
 The preferred way to install Pueue is to use your system's package manager.
 This will usually deploy service files and completions automatically.
@@ -91,7 +90,7 @@ Pueue has been packaged for quite a few distributions, check the table on the ri
 
 Statically linked (if possible) binaries for Linux (incl. ARM), Mac OS and Windows are built on each release. \
 You can download the binaries for the client and the daemon (`pueue` and `pueued`) for each release on the [release page](https://github.com/Nukesor/pueue/releases). \
-Just download both binaries for your system, rename them to `pueue` and `pueued` and place them in your \$PATH/program folder.
+Just download both binaries for your system, rename them to `pueue` and `pueued` and place them in your `$PATH`/program folder.
 
 #### Via Cargo
 
@@ -125,7 +124,7 @@ There are also detailed sections for (hopefully) every important feature:
 
 - [Configuration](https://github.com/Nukesor/pueue/wiki/Configuration)
 - [Groups](https://github.com/Nukesor/pueue/wiki/Groups)
-- [Miscellaneous](https://github.com/Nukesor/pueue/wiki/Miscellaneous)
+- [Advanced usage](https://github.com/Nukesor/pueue/wiki/Advanced-usage)
 - [Connect to remote](https://github.com/Nukesor/pueue/wiki/Connect-to-remote)
 
 On top of that, there is a help option (-h) for all commands.
@@ -230,6 +229,11 @@ If you find yourself in the need for complex setups such as multiple worker pool
 
 A robust and featureful parallel processor with text-based joblog and n-retries. [GNU Parallel](https://www.gnu.org/software/parallel/parallel_tutorial.html) is able to scale to multi-host parallelization and has complex code to have deep integration across different tools and shells, as well as other advanced features. `Pueue` differentiates itself from GNU Parallel by focusing more on visibility across many different long running commands, and creating a central location for commands to be stored, rather than GNU Parallel's focus on chunking a specific task.
 
+#### Pm2
+
+[pm2](https://pm2.keymetrics.io/docs/usage/quick-start/) is a process management tool, whose focus is more on management of recurring and long-living tasks.
+It seems to be quite mature and has a rich interface.
+
 #### nq
 
 A very lightweight job queue systems which require no setup, maintenance, supervision, or any long-running processes. \
@@ -248,15 +252,10 @@ Feature requests and pull requests are very much appreciated and welcome!
 Anyhow, please talk to me a bit about your ideas before you start hacking!
 It's always nice to know what you're working on and I might have a few suggestions or tips :)
 
-Depending on the type of your contribution, you should branch of from either the `main` branch or the `development` branch.
+Depending on the type of your contribution, you should branch of from the `main` branch.
+Pueue is mature enough to no longer need a `development` branch and all changes are collected on there before a new release is pushed.
+Urgent hotfixes might get deployed on a separate branch, but this will be decided on a case-by-case basis.
 
-- Bug fixes or critical library updates should branch of `main` and be merged into `main`.
-    New patch level releases will be published for this kind of issues.
-    Any patches in `main` will also regularly be merged into `development`.
-- Everything else, such as new features, refactorings, or breaking changes, should branch of `development` and be merged into `development`.
-    Once a new minor or major version has been published, `development` will then be merged into `main`.
+There's also the [Architecture Guide](https://github.com/Nukesor/pueue/blob/main/docs/Architecture.md), which is supposed to give you a brief overview and introduction to the project.
 
-There's also the [Architecture Guide](https://github.com/Nukesor/pueue/blob/main/ARCHITECTURE.md), which is supposed to give you a brief overview and introduction to the project.
-
-Copyright &copy; 2019 Arne Beer ([@Nukesor](https://github.com/Nukesor))
-
+Copyright © 2019 Arne Beer ([@Nukesor](https://github.com/Nukesor))

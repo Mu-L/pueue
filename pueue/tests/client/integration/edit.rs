@@ -20,7 +20,10 @@ async fn edit_task_default() -> Result<()> {
 
     // Update the task's command by piping a string to the temporary file.
     let mut envs = HashMap::new();
-    envs.insert("EDITOR", "echo 'expected command string' > ");
+    envs.insert(
+        "EDITOR",
+        "echo 'expected command string' > ${PUEUE_EDIT_PATH}/0/command ||",
+    );
     run_client_command_with_env(shared, &["edit", "0"], envs)?;
 
     // Make sure that both the command has been updated.
@@ -31,6 +34,7 @@ async fn edit_task_default() -> Result<()> {
     // All other properties should be unchanged.
     assert_eq!(task.path, daemon.tempdir.path());
     assert_eq!(task.label, None);
+    assert_eq!(task.priority, 0);
 
     Ok(())
 }
@@ -50,19 +54,22 @@ async fn edit_all_task_properties() -> Result<()> {
 
     // Update all task properties by piping a string to the respective temporary file.
     let mut envs = HashMap::new();
-    envs.insert("EDITOR", "echo 'expected string' > ");
-    run_client_command_with_env(
-        shared,
-        &["edit", "--command", "--path", "--label", "0"],
-        envs,
-    )?;
+    envs.insert(
+        "EDITOR",
+        "echo 'command' > ${PUEUE_EDIT_PATH}/0/command && \
+echo '/tmp' > ${PUEUE_EDIT_PATH}/0/path && \
+echo 'label' > ${PUEUE_EDIT_PATH}/0/label && \
+echo '5' > ${PUEUE_EDIT_PATH}/0/priority || ",
+    );
+    run_client_command_with_env(shared, &["edit", "0"], envs)?;
 
     // Make sure that all properties have been updated.
     let state = get_state(shared).await?;
     let task = state.tasks.get(&0).unwrap();
-    assert_eq!(task.command, "expected string");
-    assert_eq!(task.path.to_string_lossy(), "expected string");
-    assert_eq!(task.label, Some("expected string".to_string()));
+    assert_eq!(task.command, "command");
+    assert_eq!(task.path.to_string_lossy(), "/tmp");
+    assert_eq!(task.label, Some("label".to_string()));
+    assert_eq!(task.priority, 5);
 
     Ok(())
 }
@@ -83,13 +90,40 @@ async fn edit_delete_label() -> Result<()> {
 
     // Echo an empty string into the file.
     let mut envs = HashMap::new();
-    envs.insert("EDITOR", "echo '' > ");
-    run_client_command_with_env(shared, &["edit", "--label", "0"], envs)?;
+    envs.insert("EDITOR", "echo '' > ${PUEUE_EDIT_PATH}/0/label ||");
+    run_client_command_with_env(shared, &["edit", "0"], envs)?;
 
     // Make sure that the label has indeed be deleted
     let state = get_state(shared).await?;
     let task = state.tasks.get(&0).unwrap();
     assert_eq!(task.label, None);
+
+    Ok(())
+}
+
+/// Ensure that updating the priority in the editor results in the modification of the task's priority.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn edit_change_priority() -> Result<()> {
+    let daemon = daemon().await?;
+    let shared = &daemon.settings.shared;
+
+    // Create a stashed message which we'll edit later on.
+    let mut message = create_add_message(shared, "this is a test");
+    message.stashed = true;
+    message.priority = Some(0);
+    send_message(shared, message)
+        .await
+        .context("Failed to to add stashed task.")?;
+
+    // Echo a new priority into the file.
+    let mut envs = HashMap::new();
+    envs.insert("EDITOR", "echo '99' > ${PUEUE_EDIT_PATH}/0/priority ||");
+    run_client_command_with_env(shared, &["edit", "0"], envs)?;
+
+    // Make sure that the priority has indeed been updated.
+    let state = get_state(shared).await?;
+    let task = state.tasks.get(&0).unwrap();
+    assert_eq!(task.priority, 99);
 
     Ok(())
 }

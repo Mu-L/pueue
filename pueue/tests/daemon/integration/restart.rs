@@ -17,19 +17,15 @@ async fn test_restart_in_place() -> Result<()> {
 
     // Wait for task 0 to finish.
     let original_task = wait_for_task_condition(shared, 0, |task| task.is_done()).await?;
-    assert!(
-        original_task.enqueued_at.is_some(),
-        "Task is done and should have enqueue_at set."
-    );
 
     // Restart task 0 with an extended sleep command with a different path.
     let restart_message = RestartMessage {
         tasks: vec![TaskToRestart {
             task_id: 0,
-            command: Some("sleep 60".to_string()),
-            path: Some(PathBuf::from("/tmp")),
-            label: Some("test".to_owned()),
-            delete_label: false,
+            command: "sleep 60".to_string(),
+            path: PathBuf::from("/tmp"),
+            label: Some("test".to_string()),
+            priority: 0,
         }],
         start_immediately: false,
         stashed: false,
@@ -46,11 +42,6 @@ async fn test_restart_in_place() -> Result<()> {
     assert_eq!(
         original_task.created_at, task.created_at,
         "created_at shouldn't change on 'restart -i'"
-    );
-    // The created_at time should have been updated
-    assert!(
-        original_task.enqueued_at.unwrap() < task.enqueued_at.unwrap(),
-        "The second run should be enqueued before the first run."
     );
 
     // Make sure both command and path were changed
@@ -73,16 +64,16 @@ async fn test_cannot_restart_running() -> Result<()> {
     assert_success(add_task(shared, "sleep 60").await?);
 
     // Wait for task 0 to finish.
-    wait_for_task_condition(shared, 0, |task| task.is_running()).await?;
+    let task = wait_for_task_condition(shared, 0, |task| task.is_running()).await?;
 
     // Restart task 0 with an extended sleep command.
     let restart_message = RestartMessage {
         tasks: vec![TaskToRestart {
             task_id: 0,
-            command: None,
-            path: None,
-            label: None,
-            delete_label: false,
+            command: task.command,
+            path: task.path,
+            label: task.label,
+            priority: task.priority,
         }],
         start_immediately: false,
         stashed: false,

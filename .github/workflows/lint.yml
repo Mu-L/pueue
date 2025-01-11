@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - development
     paths:
       - ".github/**/*"
       - "**.rs"
@@ -13,7 +12,6 @@ on:
   pull_request:
     branches:
       - main
-      - development
     paths:
       - ".github/**/*"
       - "**.rs"
@@ -74,8 +72,20 @@ jobs:
             lint-${{ runner.os }}-cargo-${{ matrix.target }}-
             ${{ runner.os }}-cargo-${{ matrix.target }}-
 
+      # ----- Actual linting logic ------
+      # These lines should mirror the `just lint` command.
       - name: cargo fmt
-        run : cargo fmt --all -- --check
+        run: cargo fmt --all -- --check
 
       - name: cargo clippy
         run: cargo clippy --tests --workspace -- -D warnings
+
+      # Only run taplo on linux to save some time.
+      # Also, taplo is broken on windows for some reason.
+      - name: Install taplo-cli
+        run: cargo install taplo-cli || exit 0
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+
+      - name: cargo sort
+        run: ~/.cargo/bin/taplo format --check
+        if: matrix.target == 'x86_64-unknown-linux-gnu'

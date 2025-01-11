@@ -5,7 +5,7 @@ use std::{borrow::Cow, collections::HashMap};
 use anyhow::{bail, Context, Result};
 use clap::crate_version;
 use crossterm::tty::IsTty;
-use log::error;
+use log::{error, warn};
 
 use pueue_lib::network::message::*;
 use pueue_lib::network::protocol::*;
@@ -16,6 +16,8 @@ use pueue_lib::state::PUEUE_DEFAULT_GROUP;
 use crate::client::cli::{CliArguments, ColorChoice, GroupCommand, SubCommand};
 use crate::client::commands::*;
 use crate::client::display::*;
+
+use super::cli::EnvCommand;
 
 /// This struct contains the base logic for the client.
 /// The client is responsible for connecting to the daemon, sending instructions
@@ -110,7 +112,7 @@ impl Client {
             };
 
             if show_warning {
-                println!(
+                warn!(
                     "Different daemon version detected '{version}'. Consider restarting the daemon."
                 );
             }
@@ -173,13 +175,23 @@ impl Client {
     async fn handle_complex_command(&mut self) -> Result<bool> {
         // This match handles all "complex" commands.
         match &self.subcommand {
-            SubCommand::Reset { force, .. } => {
+            SubCommand::Reset { force, groups } => {
                 // Get the current state and check if there're any running tasks.
                 // If there are, ask the user if they really want to reset the state.
                 let state = get_state(&mut self.stream).await?;
+
+                // Get the groups that should be reset.
+                let groups: Vec<String> = if groups.is_empty() {
+                    state.groups.keys().cloned().collect()
+                } else {
+                    groups.clone()
+                };
+
+                // Check if there're any running tasks for that group
                 let running_tasks = state
                     .tasks
                     .iter()
+                    .filter(|(_id, task)| groups.contains(&task.group))
                     .filter_map(|(id, task)| if task.is_running() { Some(*id) } else { None })
                     .collect::<Vec<_>>();
 
@@ -193,21 +205,8 @@ impl Client {
                 Ok(false)
             }
 
-            SubCommand::Edit {
-                task_id,
-                command,
-                path,
-                label,
-            } => {
-                let message = edit(
-                    &mut self.stream,
-                    &self.settings,
-                    *task_id,
-                    *command,
-                    *path,
-                    *label,
-                )
-                .await?;
+            SubCommand::Edit { task_ids } => {
+                let message = edit(&mut self.stream, &self.settings, task_ids).await?;
                 self.handle_response(message)?;
                 Ok(true)
             }
@@ -231,8 +230,6 @@ impl Client {
                 in_place,
                 not_in_place,
                 edit,
-                edit_path,
-                edit_label,
             } => {
                 // `not_in_place` superseeds both other configs
                 let in_place =
@@ -247,8 +244,6 @@ impl Client {
                     *stashed,
                     in_place,
                     *edit,
-                    *edit_path,
-                    *edit_label,
                 )
                 .await?;
                 Ok(true)
@@ -390,7 +385,7 @@ impl Client {
     /// This function is pretty large, but it consists mostly of simple conversions
     /// of [SubCommand] variant to a [Message] variant.
     fn get_message_from_opt(&self) -> Result<Message> {
-        Ok(match &self.subcommand {
+        Ok(match self.subcommand.clone() {
             SubCommand::Add {
                 command,
                 working_directory,
@@ -413,7 +408,7 @@ impl Client {
                 let mut command = command.clone();
                 // The user can request to escape any special shell characters in all parameter strings before
                 // we concatenated them to a single string.
-                if *escape {
+                if escape {
                     command = command
                         .iter()
                         .map(|parameter| shell_escape::escape(Cow::from(parameter)).into_owned())
@@ -425,38 +420,55 @@ impl Client {
                     path,
                     // Catch the current environment for later injection into the task's process.
                     envs: HashMap::from_iter(vars()),
-                    start_immediately: *start_immediately,
-                    stashed: *stashed,
-                    group: group_or_default(group),
-                    enqueue_at: *delay_until,
-                    dependencies: dependencies.to_vec(),
-                    priority: priority.to_owned(),
-                    label: label.clone(),
-                    print_task_id: *print_task_id,
+                    start_immediately,
+                    stashed,
+                    group: group_or_default(&group),
+                    enqueue_at: delay_until,
+                    dependencies,
+                    priority,
+                    label,
+                    print_task_id,
                 }
                 .into()
             }
             SubCommand::Remove { task_ids } => {
                 if self.settings.client.show_confirmation_questions {
-                    self.handle_user_confirmation("remove", task_ids)?;
+                    self.handle_user_confirmation("remove", &task_ids)?;
                 }
                 Message::Remove(task_ids.clone())
             }
-            SubCommand::Stash { task_ids } => Message::Stash(task_ids.clone()),
+            SubCommand::Stash {
+                task_ids,
+                group,
+                all,
+                delay_until,
+            } => {
+                let selection = selection_from_params(all, &group, &task_ids);
+                StashMessage {
+                    tasks: selection,
+                    enqueue_at: delay_until,
+                }
+                .into()
+            }
             SubCommand::Switch {
                 task_id_1,
                 task_id_2,
             } => SwitchMessage {
-                task_id_1: *task_id_1,
-                task_id_2: *task_id_2,
+                task_id_1,
+                task_id_2,
             }
             .into(),
             SubCommand::Enqueue {
                 task_ids,
+                group,
+                all,
                 delay_until,
-            } => EnqueueMessage {
-                task_ids: task_ids.clone(),
-                enqueue_at: *delay_until,
+            } => {
+                let selection = selection_from_params(all, &group, &task_ids);
+                EnqueueMessage {
+                    tasks: selection,
+                    enqueue_at: delay_until,
+                }
             }
             .into(),
             SubCommand::Start {
@@ -465,7 +477,7 @@ impl Client {
                 all,
                 ..
             } => StartMessage {
-                tasks: selection_from_params(*all, group, task_ids),
+                tasks: selection_from_params(all, &group, &task_ids),
             }
             .into(),
             SubCommand::Pause {
@@ -475,8 +487,8 @@ impl Client {
                 all,
                 ..
             } => PauseMessage {
-                tasks: selection_from_params(*all, group, task_ids),
-                wait: *wait,
+                tasks: selection_from_params(all, &group, &task_ids),
+                wait,
             }
             .into(),
             SubCommand::Kill {
@@ -487,19 +499,32 @@ impl Client {
                 ..
             } => {
                 if self.settings.client.show_confirmation_questions {
-                    self.handle_user_confirmation("kill", task_ids)?;
+                    self.handle_user_confirmation("kill", &task_ids)?;
                 }
                 KillMessage {
-                    tasks: selection_from_params(*all, group, task_ids),
-                    signal: signal.clone(),
+                    tasks: selection_from_params(all, &group, &task_ids),
+                    signal,
                 }
                 .into()
             }
             SubCommand::Send { task_id, input } => SendMessage {
-                task_id: *task_id,
+                task_id,
                 input: input.clone(),
             }
             .into(),
+            SubCommand::Env { cmd } => Message::from(match cmd {
+                EnvCommand::Set {
+                    task_id,
+                    key,
+                    value,
+                } => EnvMessage::Set {
+                    task_id,
+                    key,
+                    value,
+                },
+                EnvCommand::Unset { task_id, key } => EnvMessage::Unset { task_id, key },
+            }),
+
             SubCommand::Group { cmd, .. } => match cmd {
                 Some(GroupCommand::Add { name, parallel }) => GroupMessage::Add {
                     name: name.to_owned(),
@@ -513,37 +538,42 @@ impl Client {
             SubCommand::Log {
                 task_ids,
                 lines,
+                group,
                 full,
+                all,
                 ..
             } => {
-                let lines = determine_log_line_amount(*full, lines);
+                let lines = determine_log_line_amount(full, &lines);
+                let selection = selection_from_params(all, &group, &task_ids);
 
                 let message = LogRequestMessage {
-                    task_ids: task_ids.clone(),
+                    tasks: selection,
                     send_logs: !self.settings.client.read_local_logs,
                     lines,
                 };
                 Message::Log(message)
             }
-            SubCommand::Follow { task_id, lines } => StreamRequestMessage {
-                task_id: *task_id,
-                lines: *lines,
-            }
-            .into(),
+            SubCommand::Follow { task_id, lines } => StreamRequestMessage { task_id, lines }.into(),
             SubCommand::Clean {
                 successful_only,
                 group,
             } => CleanMessage {
-                successful_only: *successful_only,
-                group: group.clone(),
+                successful_only,
+                group,
             }
             .into(),
-            SubCommand::Reset { force, .. } => {
+            SubCommand::Reset { force, groups, .. } => {
                 if self.settings.client.show_confirmation_questions && !force {
                     self.handle_user_confirmation("reset", &Vec::new())?;
                 }
 
-                ResetMessage {}.into()
+                let target = if groups.is_empty() {
+                    ResetTarget::All
+                } else {
+                    ResetTarget::Groups(groups.clone())
+                };
+
+                ResetMessage { target }.into()
             }
             SubCommand::Shutdown => Shutdown::Graceful.into(),
             SubCommand::Parallel {
@@ -551,9 +581,9 @@ impl Client {
                 group,
             } => match parallel_tasks {
                 Some(parallel_tasks) => {
-                    let group = group_or_default(group);
+                    let group = group_or_default(&group);
                     ParallelMessage {
-                        parallel_tasks: *parallel_tasks,
+                        parallel_tasks,
                         group,
                     }
                     .into()

@@ -1,6 +1,6 @@
 #![allow(bindings_with_variant_name)]
 use anyhow::{bail, Context, Result};
-use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta};
 use pest::iterators::Pair;
 use pueue_lib::task::{Task, TaskResult, TaskStatus};
 
@@ -115,13 +115,15 @@ pub fn datetime(section: Pair<'_, Rule>, query_result: &mut QueryResult) -> Resu
                 enqueue_at
             }
             Rule::column_start => {
-                let Some(start) = task.start else {
+                let (start, _) = task.start_and_end();
+                let Some(start) = start else {
                     return false;
                 };
                 start
             }
             Rule::column_end => {
-                let Some(end) = task.end else {
+                let (_, end) = task.start_and_end();
+                let Some(end) = end else {
                     return false;
                 };
                 end
@@ -156,7 +158,7 @@ pub fn datetime(section: Pair<'_, Rule>, query_result: &mut QueryResult) -> Resu
 
                 // Get the end of the given day.
                 // Use the most inclusive datetime in case of ambiguity
-                let end_of_day = (date + Duration::days(1))
+                let end_of_day = (date + TimeDelta::try_days(1).unwrap())
                     .and_hms_opt(0, 0, 0)
                     .expect("Couldn't determine start of day for given date.")
                     .and_local_timezone(Local);
@@ -253,6 +255,37 @@ pub fn label(section: Pair<'_, Rule>, query_result: &mut QueryResult) -> Result<
     Ok(())
 }
 
+/// Parse a filter for the command field.
+///
+/// This filter syntax is exactly the same as the [label] filter.
+/// Only the keyword changed from `label` to `command`.
+pub fn command(section: Pair<'_, Rule>, query_result: &mut QueryResult) -> Result<()> {
+    let mut filter = section.into_inner();
+    // The first word should be the `command` keyword.
+    let _command = filter.next().unwrap();
+
+    // Get the operator that should be applied in this filter.
+    // Can be either of [Rule::eq | Rule::neq].
+    let operator = filter.next().unwrap().as_rule();
+
+    // Get the name of the command we should filter for.
+    let operand = filter.next().unwrap().as_str().to_string();
+
+    // Build the command filter function.
+    let filter_function = Box::new(move |task: &Task| -> bool {
+        let command = task.command.as_str();
+        match operator {
+            Rule::eq => command == operand,
+            Rule::neq => command != operand,
+            Rule::contains => command.contains(&operand),
+            _ => false,
+        }
+    });
+    query_result.filters.push(filter_function);
+
+    Ok(())
+}
+
 /// Parse a filter for the status field.
 ///
 /// This filter syntax looks like this:
@@ -311,16 +344,22 @@ pub fn status(section: Pair<'_, Rule>, query_result: &mut QueryResult) -> Result
     // Build the filter function for the task's status.
     let filter_function = Box::new(move |task: &Task| -> bool {
         let matches = match operand {
-            Rule::status_queued => matches!(task.status, TaskStatus::Queued),
+            Rule::status_queued => matches!(task.status, TaskStatus::Queued { .. }),
             Rule::status_stashed => matches!(task.status, TaskStatus::Stashed { .. }),
-            Rule::status_running => matches!(task.status, TaskStatus::Running),
-            Rule::status_paused => matches!(task.status, TaskStatus::Paused),
+            Rule::status_running => matches!(task.status, TaskStatus::Running { .. }),
+            Rule::status_paused => matches!(task.status, TaskStatus::Paused { .. }),
             Rule::status_success => {
-                matches!(&task.status, TaskStatus::Done(TaskResult::Success))
+                matches!(
+                    &task.status,
+                    TaskStatus::Done {
+                        result: TaskResult::Success,
+                        ..
+                    }
+                )
             }
             Rule::status_failed => {
                 let mut matches = false;
-                if let TaskStatus::Done(result) = &task.status {
+                if let TaskStatus::Done { result, .. } = &task.status {
                     if !matches!(result, TaskResult::Success) {
                         matches = true;
                     }

@@ -32,7 +32,7 @@ pub fn print_state(
     let mut table_builder = TableBuilder::new(settings, style);
 
     if let Some(query) = query {
-        let query_result = apply_query(&query.join(" "))?;
+        let query_result = apply_query(&query.join(" "), &group_only)?;
         table_builder.set_visibility_by_rules(&query_result.selected_columns);
         tasks = query_result.apply_filters(tasks);
         tasks = query_result.order_tasks(tasks);
@@ -122,7 +122,7 @@ fn print_all_groups(
     let sorted_tasks = sort_tasks_by_group(tasks);
 
     // Always print the default queue at the very top, if no specific group is requested.
-    if sorted_tasks.get(PUEUE_DEFAULT_GROUP).is_some() {
+    if sorted_tasks.contains_key(PUEUE_DEFAULT_GROUP) {
         let tasks = sorted_tasks.get(PUEUE_DEFAULT_GROUP).unwrap();
         let headline = get_group_headline(
             PUEUE_DEFAULT_GROUP,

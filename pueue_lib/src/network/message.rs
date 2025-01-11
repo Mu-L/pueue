@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use chrono::prelude::*;
-use serde_derive::{Deserialize, Serialize};
-use strum_macros::{Display, EnumString};
+use serde::{Deserialize, Serialize};
+use strum::{Display, EnumString};
 
 use crate::state::{Group, State};
 use crate::task::Task;
@@ -21,6 +21,22 @@ macro_rules! impl_into_message {
     };
 }
 
+/// Macro to simplify creating success_messages
+#[macro_export]
+macro_rules! success_msg {
+    ($($arg:tt)*) => {{
+        create_success_message(format!($($arg)*))
+    }}
+}
+
+/// Macro to simplify creating failure_messages
+#[macro_export]
+macro_rules! failure_msg {
+    ($($arg:tt)*) => {{
+        create_failure_message(format!($($arg)*))
+    }}
+}
+
 /// This is the main message enum. \
 /// Everything that's send between the daemon and a client can be represented by this enum.
 #[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
@@ -28,7 +44,7 @@ pub enum Message {
     Add(AddMessage),
     Remove(Vec<usize>),
     Switch(SwitchMessage),
-    Stash(Vec<usize>),
+    Stash(StashMessage),
     Enqueue(EnqueueMessage),
 
     Start(StartMessage),
@@ -41,14 +57,16 @@ pub enum Message {
 
     /// The first part of the three-step protocol to edit a task.
     /// This one requests an edit from the daemon.
-    EditRequest(usize),
+    EditRequest(Vec<usize>),
+    /// The daemon locked the tasks and responds with the tasks' details.
+    EditResponse(Vec<EditableTask>),
     /// This is send by the client if something went wrong during the editing process.
     /// The daemon will go ahead and restore the task's old state.
-    EditRestore(usize),
-    /// The daemon locked the task and responds with the task's details.
-    EditResponse(EditResponseMessage),
+    EditRestore(Vec<usize>),
     /// The client sends the edited details to the daemon.
-    Edit(EditMessage),
+    Edit(Vec<EditableTask>),
+
+    Env(EnvMessage),
 
     Group(GroupMessage),
     GroupResponse(GroupResponseMessage),
@@ -86,7 +104,7 @@ pub enum TaskSelection {
     All,
 }
 
-#[derive(PartialEq, Eq, Clone, Deserialize, Serialize)]
+#[derive(PartialEq, Eq, Clone, Default, Deserialize, Serialize)]
 pub struct AddMessage {
     pub command: String,
     pub path: PathBuf,
@@ -134,8 +152,16 @@ pub struct SwitchMessage {
 impl_into_message!(SwitchMessage, Message::Switch);
 
 #[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
+pub struct StashMessage {
+    pub tasks: TaskSelection,
+    pub enqueue_at: Option<DateTime<Local>>,
+}
+
+impl_into_message!(StashMessage, Message::Stash);
+
+#[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
 pub struct EnqueueMessage {
-    pub task_ids: Vec<usize>,
+    pub tasks: TaskSelection,
     pub enqueue_at: Option<DateTime<Local>>,
 }
 
@@ -159,18 +185,17 @@ pub struct RestartMessage {
 
 impl_into_message!(RestartMessage, Message::Restart);
 
-#[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
+#[derive(PartialEq, Eq, Clone, Debug, Default, Deserialize, Serialize)]
 pub struct TaskToRestart {
     pub task_id: usize,
     /// Restart the task with an updated command.
-    pub command: Option<String>,
+    pub command: String,
     /// Restart the task with an updated path.
-    pub path: Option<PathBuf>,
+    pub path: PathBuf,
     /// Restart the task with an updated label.
     pub label: Option<String>,
-    /// Cbor cannot represent Option<Option<T>> yet, which is why we have to utilize a
-    /// boolean to indicate that the label should be released, rather than an `Some(None)`.
-    pub delete_label: bool,
+    /// Restart the task with an updated priority.
+    pub priority: i32,
 }
 
 #[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
@@ -218,27 +243,51 @@ pub struct SendMessage {
 impl_into_message!(SendMessage, Message::Send);
 
 #[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
-pub struct EditResponseMessage {
-    pub task_id: usize,
+pub struct EditableTask {
+    pub id: usize,
     pub command: String,
     pub path: PathBuf,
     pub label: Option<String>,
+    pub priority: i32,
 }
 
-impl_into_message!(EditResponseMessage, Message::EditResponse);
+impl From<&Task> for EditableTask {
+    /// Create an editable tasks from any [Task]]
+    fn from(value: &Task) -> Self {
+        EditableTask {
+            id: value.id,
+            command: value.command.clone(),
+            path: value.path.clone(),
+            label: value.label.clone(),
+            priority: value.priority,
+        }
+    }
+}
+
+impl EditableTask {
+    /// Merge a [EditableTask] back into a [Task].
+    pub fn into_task(self, task: &mut Task) {
+        task.command = self.command;
+        task.path = self.path;
+        task.label = self.label;
+        task.priority = self.priority;
+    }
+}
 
 #[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
-pub struct EditMessage {
-    pub task_id: usize,
-    pub command: Option<String>,
-    pub path: Option<PathBuf>,
-    pub label: Option<String>,
-    /// Cbor cannot represent Option<Option<T>> yet, which is why we have to utilize a
-    /// boolean to indicate that the label should be released, rather than an `Some(None)`.
-    pub delete_label: bool,
+pub enum EnvMessage {
+    Set {
+        task_id: usize,
+        key: String,
+        value: String,
+    },
+    Unset {
+        task_id: usize,
+        key: String,
+    },
 }
 
-impl_into_message!(EditMessage, Message::Edit);
+impl_into_message!(EnvMessage, Message::Env);
 
 #[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
 pub enum GroupMessage {
@@ -260,16 +309,24 @@ pub struct GroupResponseMessage {
 impl_into_message!(GroupResponseMessage, Message::GroupResponse);
 
 #[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
-pub struct ResetMessage {}
+pub enum ResetTarget {
+    // Reset all groups
+    All,
+    // Reset a list of specific groups
+    Groups(Vec<String>),
+}
+
+#[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
+pub struct ResetMessage {
+    pub target: ResetTarget,
+}
 
 impl_into_message!(ResetMessage, Message::Reset);
 
 #[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
 pub struct CleanMessage {
-    #[serde(default = "bool::default")]
     pub successful_only: bool,
 
-    #[serde(default = "Option::default")]
     pub group: Option<String>,
 }
 
@@ -296,12 +353,12 @@ impl_into_message!(StreamRequestMessage, Message::StreamRequest);
 
 /// Request logs for specific tasks.
 ///
-/// `task_ids` specifies the requested tasks. If none are given, all tasks are selected.
+/// `tasks` specifies the requested tasks.
 /// `send_logs` Determines whether logs should be sent at all.
 /// `lines` Determines whether only a few lines of log should be returned.
 #[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize)]
 pub struct LogRequestMessage {
-    pub task_ids: Vec<usize>,
+    pub tasks: TaskSelection,
     pub send_logs: bool,
     pub lines: Option<usize>,
 }
@@ -312,7 +369,6 @@ impl_into_message!(LogRequestMessage, Message::Log);
 #[derive(PartialEq, Eq, Clone, Deserialize, Serialize)]
 pub struct TaskLogMessage {
     pub task: Task,
-    #[serde(default = "bool::default")]
     /// Indicates whether the log output has been truncated or not.
     pub output_complete: bool,
     pub output: Option<Vec<u8>>,

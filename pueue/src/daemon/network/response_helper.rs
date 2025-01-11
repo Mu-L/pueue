@@ -6,7 +6,7 @@ use pueue_lib::task::Task;
 
 use crate::daemon::state_helper::LockedState;
 
-/// Check whether the given group exists. Return an failure message if it doesn't.
+/// Check whether a given group exists. Return a failure message if it doesn't.
 pub fn ensure_group_exists<'state>(
     state: &'state mut LockedState,
     group: &str,
@@ -21,11 +21,21 @@ pub fn ensure_group_exists<'state>(
     )))
 }
 
-/// Compile a response for actions that affect several given tasks.
-/// These actions can sometimes only succeed for a part of the given tasks.
+/// Compile a response for an action that affect several given tasks.
+/// That action can sometimes only succeed for a portion of the given tasks.
+/// E.g. only running tasks can be killed.
 ///
-/// That's why this helper exists, which determines based on a given criterion `filter`
-/// for which tasks the action succeeded and which tasks failed.
+/// That's why this helper exists, which determines for which tasks an action succeeds
+/// and which tasks fail, based on a given `filter` criterion.
+/// ```rs
+/// task_ids = vec![1, 2, 4];
+/// task_action_response_helper(
+///     "Tasks are being killed",
+///     task_ids.clone(),
+///     |task| task.is_running(),
+///     &state,
+/// ),
+/// ```
 pub fn task_action_response_helper<F>(
     message: &str,
     task_ids: Vec<usize>,
@@ -41,7 +51,7 @@ where
     compile_task_response(message, filtered_tasks)
 }
 
-/// Compile a response for instructions with multiple tasks ids
+/// Compile a response for instructions with multiple tasks ids.
 /// A custom message will be combined with a text about all matching tasks
 /// and possibly tasks for which the instruction cannot be executed.
 pub fn compile_task_response(message: &str, filtered_tasks: FilteredTasks) -> Message {

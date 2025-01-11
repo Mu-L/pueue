@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser};
-use clap_complete::{generate_to, shells};
+use clap_complete::{generate, generate_to, shells};
 use log::warn;
-use simplelog::{Config, ConfigBuilder, LevelFilter, SimpleLogger};
+use simplelog::{Config, ConfigBuilder, LevelFilter, SimpleLogger, TermLogger, TerminalMode};
 
 use pueue_lib::settings::Settings;
 
@@ -35,10 +35,10 @@ async fn main() -> Result<()> {
 
     // Init the logger and set the verbosity level depending on the `-v` flags.
     let level = match opt.verbose {
-        0 => LevelFilter::Error,
-        1 => LevelFilter::Warn,
-        2 => LevelFilter::Info,
-        _ => LevelFilter::Debug,
+        0 => LevelFilter::Warn,
+        1 => LevelFilter::Info,
+        2 => LevelFilter::Debug,
+        _ => LevelFilter::Trace,
     };
 
     // Try to initialize the logger with the timezone set to the Local time of the machine.
@@ -51,7 +51,17 @@ async fn main() -> Result<()> {
         Ok(builder) => builder.build(),
     };
 
-    SimpleLogger::init(level, logger_config).unwrap();
+    // Init a terminal logger. If this fails for some reason, try fallback to a SimpleLogger
+    if TermLogger::init(
+        level,
+        logger_config.clone(),
+        TerminalMode::Stderr,
+        simplelog::ColorChoice::Auto,
+    )
+    .is_err()
+    {
+        SimpleLogger::init(level, logger_config).unwrap();
+    }
 
     // Try to read settings from the configuration file.
     let (mut settings, config_found) =
@@ -68,22 +78,6 @@ async fn main() -> Result<()> {
         bail!("Couldn't find a configuration file. Did you start the daemon yet?");
     }
 
-    // Warn if the deprecated --children option was used
-    if let Some(subcommand) = &opt.cmd {
-        if matches!(
-            subcommand,
-            SubCommand::Start { children: true, .. }
-                | SubCommand::Pause { children: true, .. }
-                | SubCommand::Kill { children: true, .. }
-                | SubCommand::Reset { children: true, .. }
-        ) {
-            println!(concat!(
-                "Note: The --children flag is deprecated and will be removed in a future release. ",
-                "It no longer has any effect, as this command now always applies to all processes in a task."
-            ));
-        }
-    }
-
     // Create client to talk with the daemon and connect.
     let mut client = Client::new(settings, opt)
         .await
@@ -96,17 +90,47 @@ async fn main() -> Result<()> {
 /// [clap] is capable of creating auto-generated shell completion files.
 /// This function creates such a file for one of the supported shells and puts it into the
 /// specified output directory.
-fn create_shell_completion_file(shell: &Shell, output_directory: &PathBuf) -> Result<()> {
+fn create_shell_completion_file(shell: &Shell, output_directory: &Option<PathBuf>) -> Result<()> {
     let mut app = CliArguments::command();
     app.set_bin_name("pueue");
-    let completion_result = match shell {
-        Shell::Bash => generate_to(shells::Bash, &mut app, "pueue", output_directory),
-        Shell::Elvish => generate_to(shells::Elvish, &mut app, "pueue", output_directory),
-        Shell::Fish => generate_to(shells::Fish, &mut app, "pueue", output_directory),
-        Shell::PowerShell => generate_to(shells::PowerShell, &mut app, "pueue", output_directory),
-        Shell::Zsh => generate_to(shells::Zsh, &mut app, "pueue", output_directory),
+
+    // Output a completion file to a directory, if one is provided
+    if let Some(output_directory) = output_directory {
+        let completion_result = match shell {
+            Shell::Bash => generate_to(shells::Bash, &mut app, "pueue", output_directory),
+            Shell::Elvish => generate_to(shells::Elvish, &mut app, "pueue", output_directory),
+            Shell::Fish => generate_to(shells::Fish, &mut app, "pueue", output_directory),
+            Shell::PowerShell => {
+                generate_to(shells::PowerShell, &mut app, "pueue", output_directory)
+            }
+            Shell::Zsh => generate_to(shells::Zsh, &mut app, "pueue", output_directory),
+            Shell::Nushell => generate_to(
+                clap_complete_nushell::Nushell,
+                &mut app,
+                "pueue",
+                output_directory,
+            ),
+        };
+        completion_result.context(format!("Failed to generate completions for {shell:?}"))?;
+
+        return Ok(());
+    }
+
+    // Print the completion file to stdout
+    let mut stdout = std::io::stdout();
+    match shell {
+        Shell::Bash => generate(shells::Bash, &mut app, "pueue", &mut stdout),
+        Shell::Elvish => generate(shells::Elvish, &mut app, "pueue", &mut stdout),
+        Shell::Fish => generate(shells::Fish, &mut app, "pueue", &mut stdout),
+        Shell::PowerShell => generate(shells::PowerShell, &mut app, "pueue", &mut stdout),
+        Shell::Zsh => generate(shells::Zsh, &mut app, "pueue", &mut stdout),
+        Shell::Nushell => generate(
+            clap_complete_nushell::Nushell,
+            &mut app,
+            "pueue",
+            &mut stdout,
+        ),
     };
-    completion_result.context(format!("Failed to generate completions for {shell:?}"))?;
 
     Ok(())
 }

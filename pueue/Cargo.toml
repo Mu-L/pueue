@@ -1,72 +1,80 @@
 [package]
-name = "pueue"
-version = "3.3.3"
-description = "A cli tool for managing long running shell commands."
-keywords = ["shell", "command", "parallel", "task", "queue"]
-readme = "../README.md"
 authors.workspace = true
-homepage.workspace = true
-repository.workspace = true
-license.workspace = true
+description = "A cli tool for managing long running shell commands."
 edition.workspace = true
+homepage.workspace = true
+keywords = ["command", "parallel", "queue", "shell", "task"]
+license.workspace = true
+name = "pueue"
+readme = "../README.md"
+repository.workspace = true
 rust-version.workspace = true
+version = "4.0.0-rc.1"
 
 [badges]
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-pueue-lib = { version = "0.25.1", path = "../pueue_lib" }
-
 anyhow = "1.0"
-chrono-english = "0.1"
-clap = { version = "4.3", features = ["derive", "cargo", "help"] }
-clap_complete = "4.3"
+chrono.workspace = true
+clap = { version = "4.4.18", features = ["cargo", "derive", "help"] }
+clap_complete = "4.4.10"
+clap_complete_nushell = "4.4.2"
 comfy-table = "7"
+command-group.workspace = true
 ctrlc = { version = "3", features = ["termination"] }
+handlebars.workspace = true
+interim = { version = "0.1.2", features = ["chrono"] }
+log.workspace = true
 pest = "2.7"
 pest_derive = "2.7"
+pueue-lib = { version = "0.27.0", path = "../pueue_lib" }
+serde.workspace = true
+serde_json.workspace = true
 shell-escape = "0.1"
 simplelog = "0.12"
+snap.workspace = true
+strum.workspace = true
 tempfile = "3"
-
-chrono = { workspace = true }
-command-group = { workspace = true }
-handlebars = { workspace = true }
-log = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-serde_derive = { workspace = true }
-snap = { workspace = true }
-strum = { workspace = true }
-strum_macros = { workspace = true }
-tokio = { workspace = true }
+tokio.workspace = true
 
 [dev-dependencies]
+anyhow.workspace = true
 assert_cmd = "2"
-rstest = "0.18"
-similar-asserts = "1"
-
-anyhow = { workspace = true }
-better-panic = { workspace = true }
-pretty_assertions = { workspace = true }
-serde_yaml = { workspace = true }
-
+assert_matches = "1"
+better-panic.workspace = true
 # Make it easy to view log output for select tests.
 # Set log level for tests with RUST_LOG=<level>, use with failed tests or
 # disable test stdout/stderr capture (`cargo test -- --nocapture` / `cargo
 # nextest run --no-capture`)
 env_logger = "0.10"
+pretty_assertions.workspace = true
+rstest = "0.24"
+serde_yaml.workspace = true
+similar-asserts = "1"
 test-log = "0.2"
 
 # We don't need any of the default features for crossterm.
 # However, the windows build needs the windows feature enabled.
 [target.'cfg(not(windows))'.dependencies]
-crossterm = { version = "0.27", default-features = false }
+crossterm = { version = "0.28", default-features = false }
 [target.'cfg(windows)'.dependencies]
-crossterm = { version = "0.27", default-features = false, features=["windows"] }
+crossterm = { version = "0.28", default-features = false, features = [
+  "windows",
+] }
+windows = { version = "0.58.0", features = [
+  "Win32_Security",
+  "Win32_System_Environment",
+  "Win32_System_RemoteDesktop",
+  "Win32_System_SystemServices",
+  "Win32_System_Threading",
+] }
+windows-service = "0.7.0"
 
 # Test specific dev-dependencies
-[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "netbsd"))'.dependencies]
 whoami = "1"
-procfs = { version = "0.16", default-features = false }
 
+# Test specific Linux dev-dependencies
+[target.'cfg(target_os = "linux")'.dependencies]
+procfs = { version = "0.17", default-features = false }

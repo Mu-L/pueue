@@ -1,16 +1,16 @@
 use std::path::PathBuf;
 
 use chrono::prelude::*;
-use chrono::Duration;
-use chrono_english::*;
+use chrono::TimeDelta;
 use clap::ArgAction;
 use clap::{Parser, ValueEnum, ValueHint};
+use interim::*;
 
 use pueue_lib::network::message::Signal;
 
 use super::commands::WaitTargetStatus;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 pub enum SubCommand {
     #[command(
         about = "Enqueue a task for execution.\n\
@@ -45,7 +45,7 @@ pub enum SubCommand {
         #[arg(short, long, conflicts_with = "immediate")]
         stashed: bool,
 
-        /// Prevents the task from being enqueued until <delay> elapses. See "enqueue" for accepted formats.
+        /// Prevents the task from being enqueued until 'delay' elapses. See "enqueue" for accepted formats.
         #[arg(name = "delay", short, long, conflicts_with = "immediate", value_parser = parse_delay_until)]
         delay_until: Option<DateTime<Local>>,
 
@@ -96,10 +96,23 @@ pub enum SubCommand {
     /// You have to enqueue them or start them by hand.
     Stash {
         /// Stash these specific tasks.
-        #[arg(required = true)]
         task_ids: Vec<usize>,
+
+        /// Stash all queued tasks in a group
+        #[arg(short, long, conflicts_with = "all")]
+        group: Option<String>,
+
+        /// Stash all queued tasks across all groups.
+        #[arg(short, long)]
+        all: bool,
+
+        /// Delay enqueuing these tasks until 'delay' elapses. See DELAY FORMAT below.
+        #[arg(name = "delay", short, long, value_parser = parse_delay_until)]
+        delay_until: Option<DateTime<Local>>,
     },
     /// Enqueue stashed tasks. They'll be handled normally afterwards.
+    ///
+    /// Enqueues all stashed task in the default group if no arguments are given.
     #[command(after_help = "DELAY FORMAT:
 
     The --delay argument must be either a number of seconds or a \"date expression\" similar to GNU \
@@ -126,7 +139,15 @@ pub enum SubCommand {
         /// Enqueue these specific tasks.
         task_ids: Vec<usize>,
 
-        /// Delay enqueuing these tasks until <delay> elapses. See DELAY FORMAT below.
+        /// Enqueue all stashed tasks in a group
+        #[arg(short, long, conflicts_with = "all")]
+        group: Option<String>,
+
+        /// Enqueue all stashed tasks across all groups.
+        #[arg(short, long)]
+        all: bool,
+
+        /// Delay enqueuing these tasks until 'delay' elapses. See DELAY FORMAT below.
         #[arg(name = "delay", short, long, value_parser = parse_delay_until)]
         delay_until: Option<DateTime<Local>>,
     },
@@ -151,10 +172,6 @@ pub enum SubCommand {
         /// All groups will be set to running and paused tasks will be resumed.
         #[arg(short, long)]
         all: bool,
-
-        /// Deprecated: this switch no longer has any effect.
-        #[arg(short, long)]
-        children: bool,
     },
 
     #[command(
@@ -197,17 +214,9 @@ pub enum SubCommand {
         #[arg(long)]
         not_in_place: bool,
 
-        /// Edit the tasks' commands before restarting.
+        /// Edit the task before restarting.
         #[arg(short, long)]
         edit: bool,
-
-        /// Edit the tasks' paths before restarting.
-        #[arg(short = 'p', long)]
-        edit_path: bool,
-
-        /// Edit the tasks' labels before restarting.
-        #[arg(short = 'l', long)]
-        edit_label: bool,
     },
 
     #[command(about = "Either pause running tasks or specific groups of tasks.\n\
@@ -229,13 +238,9 @@ pub enum SubCommand {
         /// Only pause the specified group and let already running tasks finish by themselves.
         #[arg(short, long)]
         wait: bool,
-
-        /// Deprecated: this switch no longer has any effect.
-        #[arg(short, long)]
-        children: bool,
     },
 
-    #[command(about = "Kill specific running tasks or whole task groups..\n\
+    #[command(about = "Kill specific running tasks or whole task groups.\n\
         Kills all tasks of the default group when no ids or a specific group are provided.")]
     Kill {
         /// Kill these specific tasks.
@@ -248,10 +253,6 @@ pub enum SubCommand {
         /// Kill all running tasks across ALL groups. This also pauses all groups.
         #[arg(short, long)]
         all: bool,
-
-        /// Deprecated: this switch no longer has any effect.
-        #[arg(short, long)]
-        children: bool,
 
         /// Send a UNIX signal instead of simply killing the process.
         /// DISCLAIMER: This bypasses Pueue's process handling logic!
@@ -269,26 +270,18 @@ pub enum SubCommand {
         input: String,
     },
 
-    #[command(
-        about = "Edit the command, path or label of a stashed or queued task.\n\
-        By default only the command is edited.\n\
-        Multiple properties can be added in one go."
-    )]
+    #[command(about = "Adjust editable properties of a task.\n\
+        A temporary folder folder will be opened by your $EDITOR, which contains \n\
+        a file for each editable property.")]
     Edit {
-        /// The task's id.
-        task_id: usize,
+        /// The ids of all tasks that should be edited.
+        task_ids: Vec<usize>,
+    },
 
-        /// Edit the task's command.
-        #[arg(short, long)]
-        command: bool,
-
-        /// Edit the task's path.
-        #[arg(short, long)]
-        path: bool,
-
-        /// Edit the task's label.
-        #[arg(short, long)]
-        label: bool,
+    #[command(about = "Use this to add or remove environment variables from tasks.")]
+    Env {
+        #[command(subcommand)]
+        cmd: EnvCommand,
     },
 
     #[command(about = "Use this to add or remove groups.\n\
@@ -319,7 +312,7 @@ where:
   - column := `id | status | command | label | path | enqueue_at | dependencies | start | end`
   - filter := `[filter_column] [filter_op] [filter_value]`
     (note: not all columns support all operators, see \"Filter columns\" below.)
-  - filter_column := `start | end | enqueue_at | status | label`
+  - filter_column := `status | command | label | start | end | enqueue_at`
   - filter_op := `= | != | < | > | %=`
     (`%=` means 'contains', as in the test value is a substring of the column value)
   - order_by := `order_by [column] [order_direction]`
@@ -329,6 +322,12 @@ where:
   - limit_count := a positive integer
 
 Filter columns:
+  - `status` supports the operators `=`, `!=`
+    against test values that are:
+      - strings like `queued`, `stashed`, `paused`, `running`, `success`, `failed`
+  - `command`, `label` support the operators `=`, `!=`, `%=`
+    against test values that are:
+      - strings like `some text`
   - `start`, `end`, `enqueue_at` contain a datetime
     which support the operators `=`, `!=`, `<`, `>`
     against test values that are:
@@ -339,6 +338,8 @@ Filter columns:
 
 Examples:
   - `status=running`
+  - `command%=echo`
+  - `label=mytask`
   - `columns=id,status,command status=running start > 2023-05-2112:03:17 order_by command first 5`
 
 The formal syntax is defined here:
@@ -380,6 +381,14 @@ https://github.com/Nukesor/pueue/issues/350#issue-1359083118"
     Log {
         /// View the task output of these specific tasks.
         task_ids: Vec<usize>,
+
+        /// View the outputs of this specific group's tasks.
+        #[arg(short, long)]
+        group: Option<String>,
+
+        /// Show the logs of all groups' tasks.
+        #[arg(short, long)]
+        all: bool,
 
         /// Print the resulting tasks and output as json.
         /// By default only the last lines will be returned unless --full is provided.
@@ -451,9 +460,9 @@ https://github.com/Nukesor/pueue/issues/350#issue-1359083118"
 
     /// Kill all tasks, clean up afterwards and reset EVERYTHING!
     Reset {
-        /// Deprecated: this switch no longer has any effect.
+        /// If groups are specified, only those specific groups will be reset.
         #[arg(short, long)]
-        children: bool,
+        groups: Vec<String>,
 
         /// Don't ask for any confirmation.
         #[arg(short, long)]
@@ -469,7 +478,7 @@ https://github.com/Nukesor/pueue/issues/350#issue-1359083118"
             This limit is only considered when tasks are scheduled.")]
     Parallel {
         /// The amount of allowed parallel tasks.
-        #[arg(value_parser = min_one)]
+        /// Setting this to 0 means an unlimited amount of parallel tasks.
         parallel_tasks: Option<usize>,
 
         /// Set the amount for a specific group.
@@ -485,18 +494,43 @@ https://github.com/Nukesor/pueue/issues/350#issue-1359083118"
         shell: Shell,
         /// The output directory to which the file should be written.
         #[arg(value_hint = ValueHint::DirPath)]
-        output_directory: PathBuf,
+        output_directory: Option<PathBuf>,
     },
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
+pub enum EnvCommand {
+    /// Set a variable for a specific task's environment.
+    Set {
+        /// The id of the task for which the variable should be set.
+        task_id: usize,
+
+        /// The name of the environment variable to set.
+        key: String,
+
+        /// The value of the environment variable to set.
+        value: String,
+    },
+
+    /// Remove a specific variable from a task's environment.
+    Unset {
+        /// The id of the task for which the variable should be set.
+        task_id: usize,
+
+        /// The name of the environment variable to set.
+        key: String,
+    },
+}
+
+#[derive(Parser, Debug, Clone)]
 pub enum GroupCommand {
     /// Add a group by name.
     Add {
         name: String,
 
         /// Set the amount of parallel tasks this group can have.
-        #[arg(short, long, value_parser = min_one)]
+        /// Setting this to 0 means an unlimited amount of parallel tasks.
+        #[arg(short, long)]
         parallel: Option<usize>,
     },
 
@@ -519,6 +553,7 @@ pub enum Shell {
     Fish,
     PowerShell,
     Zsh,
+    Nushell,
 }
 
 #[derive(Parser, Debug)]
@@ -553,7 +588,9 @@ pub struct CliArguments {
 
 fn parse_delay_until(src: &str) -> Result<DateTime<Local>, String> {
     if let Ok(seconds) = src.parse::<i64>() {
-        let delay_until = Local::now() + Duration::seconds(seconds);
+        let delay_until = Local::now()
+            + TimeDelta::try_seconds(seconds)
+                .ok_or("Failed to get timedelta from {seconds} seconds")?;
         return Ok(delay_until);
     }
 
@@ -564,17 +601,4 @@ fn parse_delay_until(src: &str) -> Result<DateTime<Local>, String> {
     Err(String::from(
         "could not parse as seconds or date expression",
     ))
-}
-
-/// Validator function. The input string has to be parsable as int and bigger than 0
-fn min_one(value: &str) -> Result<usize, String> {
-    match value.parse::<usize>() {
-        Ok(value) => {
-            if value < 1 {
-                return Err("You must provide a value that's bigger than 0".into());
-            }
-            Ok(value)
-        }
-        Err(_) => Err("Failed to parse integer".into()),
-    }
 }

@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Fix possible DOS attack vector on incomplete TLS handshakes.
   Clients were only attackable if they ran Pueue in TLS mode on a public IP. Default is localhost and unix sockets.
 - Fix "All queued tasks ... have been stashd" message typo.
+- Fix inverted "Stashed tasks have been enqueued" message when stashing tasks by id.
 
 ## \[4.0.4\] - 2026-03-02
 

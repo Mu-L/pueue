@@ -3,7 +3,10 @@ use std::{fs::OpenOptions, io::Write, path::Path};
 use rcgen::{CertifiedKey, generate_simple_self_signed};
 
 use crate::internal_prelude::*;
-use pueue_lib::{error::Error, settings::Shared};
+use pueue_lib::{
+    error::{Error, IoError},
+    settings::Shared,
+};
 
 /// This the default certificates at the default `pueue_dir/certs` location.
 pub fn create_certificates(shared_settings: &Shared) -> Result<(), Error> {
@@ -55,12 +58,10 @@ fn write_file(blob: String, name: &str, path: &Path, mode: u32) -> Result<(), Er
         options.mode(mode);
     }
 
-    let mut file = options
-        .open(path)
-        .map_err(|err| Error::IoPathError(path.to_path_buf(), "creating certificate", err))?;
+    let mut file = options.open(path).io_path(path, "creating certificate")?;
 
     file.write_all(&blob.into_bytes())
-        .map_err(|err| Error::IoPathError(path.to_path_buf(), "writing certificate", err))?;
+        .io_path(path, "writing certificate")?;
 
     Ok(())
 }

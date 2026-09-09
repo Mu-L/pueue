@@ -6,7 +6,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use pueue_lib::{Client, error::Error, message::*, settings::Settings};
+use pueue_lib::{
+    Client,
+    error::{Error, IoError},
+    message::*,
+    settings::Settings,
+};
 use tempfile::tempdir;
 
 use super::handle_response;
@@ -124,14 +129,12 @@ pub fn edit_tasks_with_toml(
     let temp_file_path = temp_dir_path.join("tasks.toml");
 
     // Write the file to disk and open it with the editor.
-    std::fs::write(&temp_file_path, toml).map_err(|err| {
-        Error::IoPathError(temp_file_path.clone(), "creating temporary file", err)
-    })?;
+    std::fs::write(&temp_file_path, toml).io_path(&temp_file_path, "creating temporary file")?;
     run_editor(settings, &temp_file_path)?;
 
     // Read the data back from disk into the map and deserialize it back into a map.
-    let content = read_to_string(&temp_file_path)
-        .map_err(|err| Error::IoPathError(temp_file_path.clone(), "reading temporary file", err))?;
+    let content =
+        read_to_string(&temp_file_path).io_path(&temp_file_path, "reading temporary file")?;
     let map: BTreeMap<String, EditableTask> = toml::from_str(&content)
         .map_err(|err| Error::Generic(format!("\nFailed to deserialize tasks to toml:\n{err}")))?;
 
@@ -202,42 +205,33 @@ impl Editable for EditableTask {
     /// Create a folder for this task that contains one file for each editable property.
     fn create_temp_dir(&self, temp_dir: &Path) -> Result<()> {
         let task_dir = temp_dir.join(self.id.to_string());
-        create_dir(&task_dir)
-            .map_err(|err| Error::IoPathError(task_dir.clone(), "creating task dir", err))?;
+        create_dir(&task_dir).io_path(&task_dir, "creating task dir")?;
 
         // Create command file
         let cmd_path = task_dir.join("command");
-        let mut output = File::create(&cmd_path)
-            .map_err(|err| Error::IoPathError(cmd_path.clone(), "creating command file", err))?;
-        write!(output, "{}", self.original_command)
-            .map_err(|err| Error::IoPathError(cmd_path.clone(), "writing command file", err))?;
+        let mut output = File::create(&cmd_path).io_path(&cmd_path, "creating command file")?;
+        write!(output, "{}", self.original_command).io_path(&cmd_path, "writing command file")?;
 
         // Create cwd file
         let cwd_path = task_dir.join("path");
-        let mut output = File::create(&cwd_path).map_err(|err| {
-            Error::IoPathError(cwd_path.clone(), "creating temporary path file", err)
-        })?;
+        let mut output =
+            File::create(&cwd_path).io_path(&cwd_path, "creating temporary path file")?;
         write!(output, "{}", self.path.to_string_lossy())
-            .map_err(|err| Error::IoPathError(cwd_path.clone(), "writing path file", err))?;
+            .io_path(&cwd_path, "writing path file")?;
 
         // Create label  file. If there's no label, create an empty file.
         let label_path = task_dir.join("label");
-        let mut output = File::create(&label_path).map_err(|err| {
-            Error::IoPathError(label_path.clone(), "creating temporary label file", err)
-        })?;
+        let mut output =
+            File::create(&label_path).io_path(&label_path, "creating temporary label file")?;
         if let Some(label) = &self.label {
-            write!(output, "{label}")
-                .map_err(|err| Error::IoPathError(label_path.clone(), "writing label file", err))?;
+            write!(output, "{label}").io_path(&label_path, "writing label file")?;
         }
 
         // Create priority file. If there's no priority, create an empty file.
         let priority_path = task_dir.join("priority");
-        let mut output = File::create(&priority_path).map_err(|err| {
-            Error::IoPathError(priority_path.clone(), "creating priority file", err)
-        })?;
-        write!(output, "{}", self.priority).map_err(|err| {
-            Error::IoPathError(priority_path.clone(), "writing priority file", err)
-        })?;
+        let mut output =
+            File::create(&priority_path).io_path(&priority_path, "creating priority file")?;
+        write!(output, "{}", self.priority).io_path(&priority_path, "writing priority file")?;
 
         Ok(())
     }
@@ -250,8 +244,7 @@ impl Editable for EditableTask {
 
         // Read command file
         let cmd_path = task_dir.join("command");
-        let command = read_to_string(&cmd_path)
-            .map_err(|err| Error::IoPathError(cmd_path.clone(), "reading command file", err))?;
+        let command = read_to_string(&cmd_path).io_path(&cmd_path, "reading command file")?;
         // Make sure the command isn't empty.
         if command.trim().is_empty() {
             bail!("Found empty command after edit for task {}", self.id);
@@ -260,8 +253,7 @@ impl Editable for EditableTask {
 
         // Read cwd file
         let cwd_path = task_dir.join("path");
-        let cwd = read_to_string(&cwd_path)
-            .map_err(|err| Error::IoPathError(cwd_path.clone(), "reading path file", err))?;
+        let cwd = read_to_string(&cwd_path).io_path(&cwd_path, "reading path file")?;
         let cwd = cwd.trim();
         // Make sure the path isn't empty
         if cwd.trim().is_empty() {
@@ -280,8 +272,7 @@ impl Editable for EditableTask {
 
         // Read label file. If file is empty, set the label to `None`
         let label_path = task_dir.join("label");
-        let label = read_to_string(&label_path)
-            .map_err(|err| Error::IoPathError(label_path.clone(), "reading label file", err))?;
+        let label = read_to_string(&label_path).io_path(&label_path, "reading label file")?;
         self.label = if label.trim().is_empty() {
             None
         } else {
@@ -290,9 +281,8 @@ impl Editable for EditableTask {
 
         // Read priority file. If file is empty, set the priority to `None`
         let priority_path = task_dir.join("priority");
-        let priority = read_to_string(&priority_path).map_err(|err| {
-            Error::IoPathError(priority_path.clone(), "reading priority file", err)
-        })?;
+        let priority =
+            read_to_string(&priority_path).io_path(&priority_path, "reading priority file")?;
         // Parse the user input into a usize.
         self.priority = priority.trim().parse().context(format!(
             "Failed to parse priority string '{}' into an integer for task {}",

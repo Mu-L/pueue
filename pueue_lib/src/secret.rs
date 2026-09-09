@@ -7,20 +7,17 @@ use std::{
 
 use rand::{RngExt, distr::Alphanumeric};
 
-use crate::error::Error;
+use crate::error::{Error, IoError};
 
 /// Read the shared secret from a file.
 pub fn read_shared_secret(path: &Path) -> Result<Vec<u8>, Error> {
-    let mut file = File::open(path).map_err(|err| {
-        Error::IoPathError(
-            path.to_path_buf(),
-            "opening secret file. Did you start the daemon at least once?",
-            err,
-        )
-    })?;
+    let mut file = File::open(path).io_path(
+        path,
+        "opening secret file. Did you start the daemon at least once?",
+    )?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)
-        .map_err(|err| Error::IoPathError(path.to_path_buf(), "reading secret file", err))?;
+        .io_path(path, "reading secret file")?;
 
     Ok(buffer)
 }
@@ -49,11 +46,9 @@ pub fn init_shared_secret(path: &Path) -> Result<(), Error> {
         options.mode(0o640);
     }
 
-    let mut file = options
-        .open(path)
-        .map_err(|err| Error::IoPathError(path.to_path_buf(), "creating shared secret", err))?;
+    let mut file = options.open(path).io_path(path, "creating shared secret")?;
     file.write_all(&secret.into_bytes())
-        .map_err(|err| Error::IoPathError(path.to_path_buf(), "writing shared secret", err))?;
+        .io_path(path, "writing shared secret")?;
 
     Ok(())
 }

@@ -5,7 +5,7 @@ use std::{
 };
 
 use process_handler::initiate_shutdown;
-use pueue_lib::{Settings, error::Error, message::ShutdownRequest, secret::init_shared_secret};
+use pueue_lib::{Settings, error::IoError, message::ShutdownRequest, secret::init_shared_secret};
 use tokio::try_join;
 
 use crate::{
@@ -100,30 +100,25 @@ pub async fn run(config_path: Option<PathBuf>, profile: Option<String>, test: bo
 fn init_directories(pueue_dir: &Path) -> Result<()> {
     // Pueue base path
     if !pueue_dir.exists() {
-        create_dir_all(pueue_dir).map_err(|err| {
-            Error::IoPathError(pueue_dir.to_path_buf(), "creating main directory", err)
-        })?;
+        create_dir_all(pueue_dir).io_path(pueue_dir, "creating main directory")?;
     }
 
     // Task log dir
     let log_dir = pueue_dir.join("log");
     if !log_dir.exists() {
-        create_dir_all(&log_dir)
-            .map_err(|err| Error::IoPathError(log_dir, "creating log directory", err))?;
+        create_dir_all(&log_dir).io_path(log_dir, "creating log directory")?;
     }
 
     // Task certs dir
     let certs_dir = pueue_dir.join("certs");
     if !certs_dir.exists() {
-        create_dir_all(&certs_dir)
-            .map_err(|err| Error::IoPathError(certs_dir, "creating certificate directory", err))?;
+        create_dir_all(&certs_dir).io_path(certs_dir, "creating certificate directory")?;
     }
 
     // Task log dir
     let logs_dir = pueue_dir.join("task_logs");
     if !logs_dir.exists() {
-        create_dir_all(&logs_dir)
-            .map_err(|err| Error::IoPathError(logs_dir, "creating task log directory", err))?;
+        create_dir_all(&logs_dir).io_path(logs_dir, "creating task log directory")?;
     }
 
     Ok(())

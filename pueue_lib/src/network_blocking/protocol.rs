@@ -8,7 +8,7 @@ use serde::{Serialize, de::DeserializeOwned};
 // Reexport all stream/socket related stuff for convenience purposes
 pub use super::socket::*;
 use crate::{
-    error::Error,
+    error::{Error, IoError},
     internal_prelude::*,
     message::{request::Request, response::Response},
 };
@@ -71,14 +71,12 @@ pub fn send_bytes(payload: &[u8], stream: &mut GenericBlockingStream) -> Result<
     // Afterwards send the request.
     stream
         .write_all(&header)
-        .map_err(|err| Error::IoError("sending request size header".to_string(), err))?;
+        .io("sending request size header")?;
 
     // Split the payload into 1.4Kbyte chunks
     // 1.5Kbyte is the MUT for TCP, but some carrier have a little less, such as Wireguard.
     for chunk in payload.chunks(PACKET_SIZE) {
-        stream
-            .write_all(chunk)
-            .map_err(|err| Error::IoError("sending payload chunk".to_string(), err))?;
+        stream.write_all(chunk).io("sending payload chunk")?;
     }
 
     stream.flush()?;
@@ -104,7 +102,7 @@ pub fn receive_bytes_with_max_size(
     let mut header = vec![0; 8];
     stream
         .read_exact(&mut header)
-        .map_err(|err| Error::IoError("reading request size header".to_string(), err))?;
+        .io("reading request size header")?;
     let mut header = Cursor::new(header);
     let message_size_u64 = ReadBytesExt::read_u64::<BigEndian>(&mut header)?;
 
@@ -144,9 +142,7 @@ pub fn receive_bytes_with_max_size(
         };
 
         // Read data and get the amount of received bytes
-        let received_bytes = stream
-            .read(&mut chunk_buffer)
-            .map_err(|err| Error::IoError("reading next chunk".to_string(), err))?;
+        let received_bytes = stream.read(&mut chunk_buffer).io("reading next chunk")?;
 
         if received_bytes == 0 {
             return Err(Error::Connection(

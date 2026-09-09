@@ -8,7 +8,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 // Reexport all stream/socket related stuff for convenience purposes
 pub use super::socket::*;
 use crate::{
-    error::Error,
+    error::{Error, IoError},
     internal_prelude::*,
     message::{request::Request, response::Response},
 };
@@ -72,15 +72,12 @@ pub async fn send_bytes(payload: &[u8], stream: &mut GenericStream) -> Result<()
     stream
         .write_all(&header)
         .await
-        .map_err(|err| Error::IoError("sending request size header".to_string(), err))?;
+        .io("sending request size header")?;
 
     // Split the payload into 1.4Kbyte chunks
     // 1.5Kbyte is the MUT for TCP, but some carrier have a little less, such as Wireguard.
     for chunk in payload.chunks(PACKET_SIZE) {
-        stream
-            .write_all(chunk)
-            .await
-            .map_err(|err| Error::IoError("sending payload chunk".to_string(), err))?;
+        stream.write_all(chunk).await.io("sending payload chunk")?;
     }
 
     stream.flush().await?;
@@ -107,7 +104,7 @@ pub async fn receive_bytes_with_max_size(
     stream
         .read_exact(&mut header)
         .await
-        .map_err(|err| Error::IoError("reading request size header".to_string(), err))?;
+        .io("reading request size header")?;
     let mut header = Cursor::new(header);
     let message_size_u64 = ReadBytesExt::read_u64::<BigEndian>(&mut header)?;
 
@@ -150,7 +147,7 @@ pub async fn receive_bytes_with_max_size(
         let received_bytes = stream
             .read(&mut chunk_buffer)
             .await
-            .map_err(|err| Error::IoError("reading next chunk".to_string(), err))?;
+            .io("reading next chunk")?;
 
         if received_bytes == 0 {
             return Err(Error::Connection(

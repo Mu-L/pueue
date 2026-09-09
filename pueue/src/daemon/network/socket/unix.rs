@@ -3,7 +3,11 @@ use std::{
     os::unix::fs::PermissionsExt,
 };
 
-use pueue_lib::{Error, network::protocol::*, settings::Shared};
+use pueue_lib::{
+    error::{Error, IoError},
+    network::protocol::*,
+    settings::Shared,
+};
 use tokio::net::{TcpListener, UnixSocket};
 
 use crate::{
@@ -16,8 +20,7 @@ pub fn socket_cleanup(settings: &Shared) -> Result<(), Error> {
     // Clean up the unix socket if we're using it and it exists.
     let socket_path = settings.unix_socket_path()?;
     if settings.use_unix_socket && socket_path.exists() {
-        std::fs::remove_file(socket_path)
-            .map_err(|inner| Error::IoError("Failed to remove unix socket.".to_string(), inner))?;
+        std::fs::remove_file(&socket_path).io_path(socket_path, "removing unix socket")?;
     }
 
     Ok(())
@@ -42,33 +45,25 @@ pub async fn get_listener(settings: &Shared) -> Result<GenericListener, Error> {
                 return Err(Error::UnixSocketExists);
             }
 
-            std::fs::remove_file(&socket_path).map_err(|err| {
-                Error::IoPathError(socket_path.clone(), "removing old socket", err)
-            })?;
+            std::fs::remove_file(&socket_path).io_path(&socket_path, "removing old socket")?;
         }
 
         // The various nix platforms handle socket permissions in different
         // ways, but generally prevent the socket's permissions from being
         // changed once it is being listened on.
-        let socket = UnixSocket::new_stream()
-            .map_err(|err| Error::IoError("creating unix socket".to_string(), err))?;
-        socket.bind(&socket_path).map_err(|err| {
-            Error::IoPathError(socket_path.clone(), "binding unix socket to path", err)
-        })?;
+        let socket = UnixSocket::new_stream().io("creating unix socket")?;
+        socket
+            .bind(&socket_path)
+            .io_path(&socket_path, "binding unix socket to path")?;
 
         if let Some(mode) = settings.unix_socket_permissions {
-            set_permissions(&socket_path, Permissions::from_mode(mode)).map_err(|err| {
-                Error::IoPathError(
-                    socket_path.clone(),
-                    "setting permissions on unix socket",
-                    err,
-                )
-            })?;
+            set_permissions(&socket_path, Permissions::from_mode(mode))
+                .io_path(&socket_path, "setting permissions on unix socket")?;
         }
 
-        let unix_listener = socket.listen(1024).map_err(|err| {
-            Error::IoPathError(socket_path.clone(), "listening on unix socket", err)
-        })?;
+        let unix_listener = socket
+            .listen(1024)
+            .io_path(&socket_path, "listening on unix socket")?;
 
         return Ok(Box::new(unix_listener));
     }
@@ -78,7 +73,7 @@ pub async fn get_listener(settings: &Shared) -> Result<GenericListener, Error> {
     info!("Binding to address: {address}");
     let tcp_listener = TcpListener::bind(&address)
         .await
-        .map_err(|err| Error::IoError("binding tcp listener to address".to_string(), err))?;
+        .io("binding tcp listener to address")?;
 
     // This is the TLS acceptor, which initializes the TLS layer
     let tls_acceptor = get_tls_listener(settings)?;

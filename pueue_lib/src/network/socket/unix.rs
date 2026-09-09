@@ -7,15 +7,12 @@ use tokio::net::{TcpStream, UnixListener, UnixStream};
 use super::{
     ConnectionSettings, GenericStream, Listener, PendingStream, Stream, get_tls_connector,
 };
-use crate::error::Error;
+use crate::error::{Error, IoError};
 
 #[async_trait]
 impl Listener for UnixListener {
     async fn accept<'a>(&'a self) -> Result<PendingStream, Error> {
-        let (stream, _) = self
-            .accept()
-            .await
-            .map_err(|err| Error::IoError("accepting new unix connection.".to_string(), err))?;
+        let (stream, _) = self.accept().await.io("accepting new unix connection.")?;
 
         Ok(Box::pin(
             async move { Ok(Box::new(stream) as GenericStream) },
@@ -33,9 +30,9 @@ pub async fn get_client_stream(settings: ConnectionSettings<'_>) -> Result<Gener
     match settings {
         // Create a unix socket
         ConnectionSettings::UnixSocket { path } => {
-            let stream = UnixStream::connect(&path).await.map_err(|err| {
-                Error::IoPathError(path, "connecting to daemon. Did you start it?", err)
-            })?;
+            let stream = UnixStream::connect(&path)
+                .await
+                .io_path(path, "connecting to daemon. Did you start it?")?;
 
             Ok(Box::new(stream))
         }

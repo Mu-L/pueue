@@ -6,7 +6,7 @@ use tokio::net::TcpListener;
 use tokio_rustls::{TlsAcceptor, rustls::ServerConfig};
 
 use pueue_lib::{
-    error::Error,
+    error::{Error, IoError},
     network::socket::{GenericStream, Listener, PendingStream},
     settings::Shared,
 };
@@ -28,7 +28,7 @@ impl Listener for TlsTcpListener {
             .tcp_listener
             .accept()
             .await
-            .map_err(|err| Error::IoError("accepting new tcp connection.".to_string(), err))?;
+            .io("accepting new tcp connection.")?;
 
         // Hand the handshake to the caller instead of awaiting it here. A peer that opens a TCP
         // connection and then never sends a ClientHello would otherwise keep us in this function
@@ -38,7 +38,7 @@ impl Listener for TlsTcpListener {
             let tls_stream = acceptor
                 .accept(stream)
                 .await
-                .map_err(|err| Error::IoError("accepting new tls connection.".to_string(), err))?;
+                .io("accepting new tls connection.")?;
 
             Ok(Box::new(tls_stream) as GenericStream)
         }))

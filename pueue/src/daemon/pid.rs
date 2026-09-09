@@ -4,18 +4,17 @@ use std::{
     path::Path,
 };
 
-use pueue_lib::Error;
+use pueue_lib::error::{Error, IoError};
 
 use crate::{internal_prelude::*, process_helper::process_exists};
 
 /// Read a PID file and throw an error, if another daemon instance is still running.
 fn check_for_running_daemon(pid_path: &Path) -> Result<()> {
     info!("Placing pid file at {pid_path:?}");
-    let mut file = File::open(pid_path)
-        .map_err(|err| Error::IoPathError(pid_path.to_path_buf(), "opening pid file", err))?;
+    let mut file = File::open(pid_path).io_path(pid_path, "opening pid file")?;
     let mut pid = String::new();
     file.read_to_string(&mut pid)
-        .map_err(|err| Error::IoPathError(pid_path.to_path_buf(), "reading pid file", err))?;
+        .io_path(pid_path, "reading pid file")?;
 
     let pid: u32 = pid
         .parse()
@@ -39,11 +38,10 @@ pub fn create_pid_file(pid_path: &Path) -> Result<()> {
     if pid_path.exists() {
         check_for_running_daemon(pid_path)?;
     }
-    let mut file = File::create(pid_path)
-        .map_err(|err| Error::IoPathError(pid_path.to_path_buf(), "creating pid file", err))?;
+    let mut file = File::create(pid_path).io_path(pid_path, "creating pid file")?;
 
     file.write_all(std::process::id().to_string().as_bytes())
-        .map_err(|err| Error::IoPathError(pid_path.to_path_buf(), "writing pid file", err))?;
+        .io_path(pid_path, "writing pid file")?;
 
     Ok(())
 }
@@ -51,6 +49,5 @@ pub fn create_pid_file(pid_path: &Path) -> Result<()> {
 /// Remove the daemon's pid file.
 /// Errors if it doesn't exist or cannot be deleted.
 pub fn cleanup_pid_file(pid_path: &Path) -> Result<(), Error> {
-    std::fs::remove_file(pid_path)
-        .map_err(|err| Error::IoPathError(pid_path.to_path_buf(), "removing pid file", err))
+    std::fs::remove_file(pid_path).io_path(pid_path, "removing pid file")
 }

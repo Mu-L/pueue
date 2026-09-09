@@ -1,5 +1,5 @@
 //! Pueue-lib errors.
-use std::path::PathBuf;
+use std::{io, path::PathBuf};
 
 #[cfg(any(feature = "network", feature = "network_blocking"))]
 use ciborium::Value;
@@ -38,14 +38,21 @@ pub enum Error {
     #[error("Some error occurred. {0}")]
     Generic(String),
 
-    #[error("I/O error while {0}:\n{1}")]
-    IoError(String, std::io::Error),
+    #[error("I/O error while {context}:\n{source}")]
+    Io {
+        context: String,
+        source: std::io::Error,
+    },
 
     #[error("Unexpected I/O error:\n{0}")]
-    RawIoError(#[from] std::io::Error),
+    RawIo(#[from] std::io::Error),
 
-    #[error("I/O error at path {0:?} while {1}:\n{2}")]
-    IoPathError(PathBuf, &'static str, std::io::Error),
+    #[error("I/O error at path {path:?} while {context}:\n{source}")]
+    IoPath {
+        path: PathBuf,
+        context: String,
+        source: std::io::Error,
+    },
 
     #[error("Unable to detect the username for the current user.{0}")]
     NoUsername(String),
@@ -58,4 +65,26 @@ pub enum Error {
             socket inside the pueue_directory manually."
     )]
     UnixSocketExists,
+}
+
+pub trait IoError<T> {
+    fn io(self, context: impl ToString) -> Result<T, Error>;
+    fn io_path(self, path: impl Into<PathBuf>, context: impl ToString) -> Result<T, Error>;
+}
+
+impl<T> IoError<T> for io::Result<T> {
+    fn io_path(self, path: impl Into<PathBuf>, context: impl ToString) -> Result<T, Error> {
+        self.map_err(|source| Error::IoPath {
+            path: path.into(),
+            context: context.to_string(),
+            source,
+        })
+    }
+
+    fn io(self, context: impl ToString) -> Result<T, Error> {
+        self.map_err(|source| Error::Io {
+            context: context.to_string(),
+            source,
+        })
+    }
 }

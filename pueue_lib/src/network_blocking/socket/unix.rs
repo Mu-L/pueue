@@ -4,13 +4,11 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use super::{
     BlockingListener, BlockingStream, ConnectionSettings, GenericBlockingStream, get_tls_connector,
 };
-use crate::error::Error;
+use crate::error::{Error, IoError};
 
 impl BlockingListener for UnixListener {
     fn accept(&self) -> Result<GenericBlockingStream, Error> {
-        let (stream, _) = self
-            .accept()
-            .map_err(|err| Error::IoError("accepting new unix connection.".to_string(), err))?;
+        let (stream, _) = self.accept().io("accepting new unix connection.")?;
         Ok(Box::new(stream))
     }
 }
@@ -25,9 +23,8 @@ pub fn get_client_stream(settings: ConnectionSettings<'_>) -> Result<GenericBloc
     match settings {
         // Create a unix socket
         ConnectionSettings::UnixSocket { path } => {
-            let stream = UnixStream::connect(&path).map_err(|err| {
-                Error::IoPathError(path, "connecting to daemon. Did you start it?", err)
-            })?;
+            let stream = UnixStream::connect(&path)
+                .io_path(path, "connecting to daemon. Did you start it?")?;
 
             Ok(Box::new(stream))
         }

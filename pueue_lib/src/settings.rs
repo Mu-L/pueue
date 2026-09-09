@@ -9,7 +9,11 @@ use std::{
 use serde::{Deserialize, Serialize};
 use shellexpand::tilde;
 
-use crate::{error::Error, internal_prelude::*, setting_defaults::*};
+use crate::{
+    error::{Error, IoError},
+    internal_prelude::*,
+    setting_defaults::*,
+};
 
 /// The environment variable that can be set to overwrite pueue's config path.
 pub const PUEUE_CONFIG_PATH_ENV: &str = "PUEUE_CONFIG_PATH";
@@ -379,8 +383,7 @@ impl Settings {
         // Load the config from a very specific file path
         if let Some(path) = &from_file {
             // Open the file in read-only mode with buffer.
-            let file = File::open(path)
-                .map_err(|err| Error::IoPathError(path.clone(), "opening config file", err))?;
+            let file = File::open(path).io_path(path, "opening config file")?;
             let reader = BufReader::new(file);
 
             let settings = serde_yaml::from_reader(reader)
@@ -400,8 +403,7 @@ impl Settings {
                 info!("Found config file at: {path:?}");
 
                 // Open the file in read-only mode with buffer.
-                let file = File::open(&path)
-                    .map_err(|err| Error::IoPathError(path, "opening config file.", err))?;
+                let file = File::open(&path).io_path(path, "opening config file.")?;
                 let reader = BufReader::new(file);
 
                 let settings = serde_yaml::from_reader(reader)
@@ -438,9 +440,7 @@ impl Settings {
 
         // Create the config dir, if it doesn't exist yet
         if !config_dir.exists() {
-            create_dir_all(config_dir).map_err(|err| {
-                Error::IoPathError(config_dir.to_path_buf(), "creating config dir", err)
-            })?;
+            create_dir_all(config_dir).io_path(config_dir, "creating config dir")?;
         }
 
         let content = match serde_yaml::to_string(self) {
@@ -451,12 +451,10 @@ impl Settings {
                 )));
             }
         };
-        let mut file = File::create(&config_path).map_err(|err| {
-            Error::IoPathError(config_dir.to_path_buf(), "creating settings file", err)
-        })?;
-        file.write_all(content.as_bytes()).map_err(|err| {
-            Error::IoPathError(config_dir.to_path_buf(), "writing settings file", err)
-        })?;
+        let mut file =
+            File::create(&config_path).io_path(&config_path, "creating settings file")?;
+        file.write_all(content.as_bytes())
+            .io_path(&config_path, "writing settings file")?;
 
         Ok(())
     }

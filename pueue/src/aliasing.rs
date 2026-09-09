@@ -1,7 +1,10 @@
 use std::{collections::HashMap, fs::File, io::prelude::*};
 
 use crate::internal_prelude::*;
-use pueue_lib::{error::Error, settings::Settings};
+use pueue_lib::{
+    error::{Error, IoError},
+    settings::Settings,
+};
 
 /// Return the contents of the alias file, if it exists and can be parsed. \
 /// The file has to be located in `pueue_directory` and named `pueue_aliases.yml`.
@@ -16,12 +19,11 @@ pub fn get_aliases(settings: &Settings) -> Result<HashMap<String, String>, Error
     };
 
     // Read the file content
-    let mut alias_file = File::open(&path)
-        .map_err(|err| Error::IoPathError(path.clone(), "opening alias file", err))?;
+    let mut alias_file = File::open(&path).io_path(&path, "opening alias file")?;
     let mut content = String::new();
     alias_file
         .read_to_string(&mut content)
-        .map_err(|err| Error::IoPathError(path.clone(), "reading alias file", err))?;
+        .io_path(&path, "reading alias file")?;
 
     serde_yaml::from_str(&content).map_err(|err| {
         Error::ConfigDeserialization(format!("Failed to read alias configuration file:\n{err}"))

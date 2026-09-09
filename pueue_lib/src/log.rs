@@ -8,7 +8,10 @@ use std::{
 use rev_buf_reader::RevBufReader;
 use snap::write::FrameEncoder;
 
-use crate::{error::Error, internal_prelude::*};
+use crate::{
+    error::{Error, IoError},
+    internal_prelude::*,
+};
 
 /// Get the path to the log file of a task.
 pub fn get_log_path(task_id: usize, pueue_dir: &Path) -> PathBuf {
@@ -20,11 +23,8 @@ pub fn get_log_path(task_id: usize, pueue_dir: &Path) -> PathBuf {
 /// These are two handles to the same file.
 pub fn create_log_file_handles(task_id: usize, pueue_dir: &Path) -> Result<(File, File), Error> {
     let log_path = get_log_path(task_id, pueue_dir);
-    let stdout_handle = File::create(&log_path)
-        .map_err(|err| Error::IoPathError(log_path, "getting stdout handle", err))?;
-    let stderr_handle = stdout_handle
-        .try_clone()
-        .map_err(|err| Error::IoError("cloning stderr handle".to_string(), err))?;
+    let stdout_handle = File::create(&log_path).io_path(log_path, "getting stdout handle")?;
+    let stderr_handle = stdout_handle.try_clone().io("cloning stderr handle")?;
 
     Ok((stdout_handle, stderr_handle))
 }
@@ -32,8 +32,7 @@ pub fn create_log_file_handles(task_id: usize, pueue_dir: &Path) -> Result<(File
 /// Return the file handle for the log file of a task.
 pub fn get_log_file_handle(task_id: usize, pueue_dir: &Path) -> Result<File, Error> {
     let path = get_log_path(task_id, pueue_dir);
-    let handle = File::open(&path)
-        .map_err(|err| Error::IoPathError(path, "getting log file handle", err))?;
+    let handle = File::open(&path).io_path(path, "getting log file handle")?;
 
     Ok(handle)
 }
@@ -44,7 +43,7 @@ pub fn get_writable_log_file_handle(task_id: usize, pueue_dir: &Path) -> Result<
     let handle = File::options()
         .write(true)
         .open(&path)
-        .map_err(|err| Error::IoPathError(path, "getting log file handle", err))?;
+        .io_path(path, "getting log file handle")?;
 
     Ok(handle)
 }
@@ -87,8 +86,7 @@ pub fn read_and_compress_log_file(
     // Pipe the remaining log output file it into the snappy compressor
     {
         let mut compressor = FrameEncoder::new(&mut content);
-        io::copy(&mut file, &mut compressor)
-            .map_err(|err| Error::IoError("compressing log output".to_string(), err))?;
+        io::copy(&mut file, &mut compressor).io("compressing log output")?;
     }
 
     Ok((content, output_complete))
@@ -139,7 +137,7 @@ pub fn seek_to_last_lines(file: &mut File, amount: usize) -> Result<bool, Error>
     let start_position = reader
         .get_mut()
         .stream_position()
-        .map_err(|err| Error::IoError("seeking to start of file".to_string(), err))?;
+        .io("seeking to start of file")?;
     let start_position: i64 = start_position.try_into().map_err(|_| {
         Error::Generic("Failed to convert start cursor position to i64".to_string())
     })?;
@@ -150,9 +148,7 @@ pub fn seek_to_last_lines(file: &mut File, amount: usize) -> Result<bool, Error>
     // Read in 4KB chunks until there's either nothing left or we found `amount` newline characters.
     'outer: loop {
         let mut buffer = vec![0; 4096];
-        let read_bytes = reader
-            .read(&mut buffer)
-            .map_err(|err| Error::IoError("reading next log chunk".to_string(), err))?;
+        let read_bytes = reader.read(&mut buffer).io("reading next log chunk")?;
 
         // Return if there's nothing left to read.
         // We hit the start of the file and read fewer lines then specified.
@@ -191,9 +187,7 @@ pub fn seek_to_last_lines(file: &mut File, amount: usize) -> Result<bool, Error>
                 // Seek to the position.
                 let file = reader.get_mut();
                 file.seek(SeekFrom::Start(distance_to_file_start))
-                    .map_err(|err| {
-                        Error::IoError("seeking to correct position".to_string(), err)
-                    })?;
+                    .io("seeking to correct position")?;
             }
 
             break 'outer;

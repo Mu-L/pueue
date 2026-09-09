@@ -5,7 +5,7 @@ use std::{
 };
 
 use process_handler::initiate_shutdown;
-use pueue_lib::{Settings, error::IoError, message::ShutdownRequest, secret::init_shared_secret};
+use pueue_lib::{Settings, message::ShutdownRequest, secret::init_shared_secret};
 use tokio::try_join;
 
 use crate::{

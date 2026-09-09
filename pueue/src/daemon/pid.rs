@@ -4,8 +4,6 @@ use std::{
     path::Path,
 };
 
-use pueue_lib::error::{Error, IoError};
-
 use crate::{internal_prelude::*, process_helper::process_exists};
 
 /// Read a PID file and throw an error, if another daemon instance is still running.

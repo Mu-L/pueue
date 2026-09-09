@@ -1,10 +1,7 @@
 use std::{collections::HashMap, fs::File, io::prelude::*};
 
 use crate::internal_prelude::*;
-use pueue_lib::{
-    error::{Error, IoError},
-    settings::Settings,
-};
+use pueue_lib::settings::Settings;
 
 /// Return the contents of the alias file, if it exists and can be parsed. \
 /// The file has to be located in `pueue_directory` and named `pueue_aliases.yml`.

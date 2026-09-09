@@ -3,11 +3,7 @@ use std::{
     os::unix::fs::PermissionsExt,
 };
 
-use pueue_lib::{
-    error::{Error, IoError},
-    network::protocol::*,
-    settings::Shared,
-};
+use pueue_lib::{network::protocol::*, settings::Shared};
 use tokio::net::{TcpListener, UnixSocket};
 
 use crate::{

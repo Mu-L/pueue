@@ -13,9 +13,10 @@ pub(crate) mod internal_prelude {
 }
 
 pub(crate) mod errors {
+    #![allow(unused_imports)]
     pub use color_eyre::Result;
-    #[allow(unused_imports)]
     pub use color_eyre::eyre::{WrapErr, bail, eyre};
+    pub use pueue_lib::error::{Error, IoError};
 }
 
 /// Shared module for internal logic!

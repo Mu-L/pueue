@@ -7,7 +7,7 @@ use color_eyre::{
 use serde::Serialize;
 
 use super::protocol::*;
-use crate::{Error, PROTOCOL_VERSION, internal_prelude::*, message::*};
+use crate::{PROTOCOL_VERSION, internal_prelude::*, message::*};
 
 /// This struct contains the base logic for the client.
 /// The client is responsible for connecting to the daemon, sending instructions

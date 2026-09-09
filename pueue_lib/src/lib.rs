@@ -2,6 +2,7 @@
 
 pub(crate) mod internal_prelude {
     #![allow(unused_imports)]
+    pub use super::error::{Error, IoError};
     pub use tracing::{debug, error, info, trace, warn};
 }
 

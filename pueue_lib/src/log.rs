@@ -8,10 +8,7 @@ use std::{
 use rev_buf_reader::RevBufReader;
 use snap::write::FrameEncoder;
 
-use crate::{
-    error::{Error, IoError},
-    internal_prelude::*,
-};
+use crate::internal_prelude::*;
 
 /// Get the path to the log file of a task.
 pub fn get_log_path(task_id: usize, pueue_dir: &Path) -> PathBuf {

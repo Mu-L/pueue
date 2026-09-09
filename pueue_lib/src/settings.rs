@@ -9,11 +9,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use shellexpand::tilde;
 
-use crate::{
-    error::{Error, IoError},
-    internal_prelude::*,
-    setting_defaults::*,
-};
+use crate::{internal_prelude::*, setting_defaults::*};
 
 /// The environment variable that can be set to overwrite pueue's config path.
 pub const PUEUE_CONFIG_PATH_ENV: &str = "PUEUE_CONFIG_PATH";

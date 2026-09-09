@@ -8,7 +8,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 // Reexport all stream/socket related stuff for convenience purposes
 pub use super::socket::*;
 use crate::{
-    error::{Error, IoError},
     internal_prelude::*,
     message::{request::Request, response::Response},
 };
